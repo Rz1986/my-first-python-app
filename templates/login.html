@@ -1,0 +1,17 @@
+{% extends 'base.html' %}
+{% block title %}登录 · Cici 的游戏乐园{% endblock %}
+{% block content %}
+<section class="auth-card">
+  <h1>欢迎回来</h1>
+  <form method="post" class="form-grid">
+    <label>用户名
+      <input type="text" name="username" required>
+    </label>
+    <label>密码
+      <input type="password" name="password" required>
+    </label>
+    <button type="submit" class="primary">登录</button>
+  </form>
+  <p class="helper-text">还没有账号？<a href="{{ url_for('register') }}">点击注册</a></p>
+</section>
+{% endblock %}

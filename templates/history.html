@@ -1,0 +1,17 @@
+{% extends 'base.html' %}
+{% block title %}我的游玩记录 · Cici 的游戏乐园{% endblock %}
+{% block content %}
+<section class="history">
+  <h1>我的游玩记录</h1>
+  <ul class="timeline">
+    {% for play in plays %}
+      <li>
+        <span class="time">{{ play.played_at.strftime('%Y-%m-%d %H:%M') }}</span>
+        <a href="{{ url_for('game_detail', slug=play.game.slug) }}">{{ play.game.title }}</a>
+      </li>
+    {% else %}
+      <li>还没有游玩记录，快去挑战第一款游戏吧！</li>
+    {% endfor %}
+  </ul>
+</section>
+{% endblock %}
