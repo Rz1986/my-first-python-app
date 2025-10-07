@@ -63,7 +63,7 @@ jobs:
             else
               .venv/bin/pip install flask gunicorn
             fi
-            echo "APP_VERSION=${GITHUB_SHA}" > .env
+            echo "APP_VERSION=${{ github.sha }}" > .env
             # 重启服务；失败时打印最近日志并失败退出
             if ! sudo systemctl restart "${{ secrets.SERVICE_NAME }}"; then
               echo "==== systemd status (after failed restart) ===="
