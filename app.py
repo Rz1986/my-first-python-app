@@ -308,6 +308,460 @@ def seed_data() -> None:
         db.session.add(admin)
         db.session.commit()
 
+    default_games = [
+        {
+            "title": "贪吃蛇大作战",
+            "slug": "snake-classic",
+            "description": "操控小蛇吃到更多能量块，身体越来越长，挑战自己的反应力。",
+            "instructions": "使用方向键移动，按空格重新开始，不要撞到自己！",
+            "play_markup": """
+<div class=\"game-panel\">
+  <h2>贪吃蛇大作战</h2>
+  <canvas id=\"snake-canvas\" width=\"300\" height=\"300\"></canvas>
+  <p id=\"snake-status\">按任意方向键开始移动，按空格重新开始。</p>
+</div>
+""".strip(),
+            "python_code": """
+import random
+from js import document, window
+from pyodide.ffi import create_proxy
+
+canvas = document.getElementById('snake-canvas')
+ctx = canvas.getContext('2d')
+status_el = document.getElementById('snake-status')
+
+grid_size = 20
+cell_size = canvas.width // grid_size
+
+snake = [(10, 10)]
+direction = (0, 0)
+food = None
+interval_id = None
+step_proxy = None
+key_proxy = None
+
+
+def place_food():
+    global food
+    while True:
+        candidate = (random.randint(0, grid_size - 1), random.randint(0, grid_size - 1))
+        if candidate not in snake:
+            food = candidate
+            break
+
+
+def draw():
+    ctx.fillStyle = '#101820'
+    ctx.fillRect(0, 0, canvas.width, canvas.height)
+
+    ctx.fillStyle = '#ff5555'
+    if food:
+        ctx.fillRect(food[0] * cell_size, food[1] * cell_size, cell_size - 1, cell_size - 1)
+
+    ctx.fillStyle = '#50fa7b'
+    for x, y in snake:
+        ctx.fillRect(x * cell_size, y * cell_size, cell_size - 1, cell_size - 1)
+
+
+def stop_game():
+    global interval_id
+    if interval_id is not None:
+        window.clearInterval(interval_id)
+        interval_id = None
+
+
+def step():
+    global snake
+    if direction == (0, 0):
+        return
+
+    head_x, head_y = snake[0]
+    new_head = ((head_x + direction[0]) % grid_size, (head_y + direction[1]) % grid_size)
+
+    if new_head in snake:
+        status_el.innerText = '碰到自己啦！按空格重新开始挑战。'
+        stop_game()
+        return
+
+    snake.insert(0, new_head)
+    if food and new_head == food:
+        place_food()
+    else:
+        snake.pop()
+
+    draw()
+
+
+def start_game():
+    global interval_id, step_proxy
+    if interval_id is None:
+        if step_proxy is None:
+            step_proxy = create_proxy(step)
+        interval_id = window.setInterval(step_proxy, 160)
+
+
+def reset():
+    global snake, direction
+    snake = [(10, 10)]
+    direction = (0, 0)
+    place_food()
+    draw()
+    status_el.innerText = '按方向键开始移动，按空格重新开始。'
+
+
+def on_keydown(event):
+    global direction
+    key = event.key
+    if key == ' ':
+        stop_game()
+        reset()
+        start_game()
+        return
+
+    mapping = {
+        'ArrowUp': (0, -1),
+        'ArrowDown': (0, 1),
+        'ArrowLeft': (-1, 0),
+        'ArrowRight': (1, 0),
+        'w': (0, -1),
+        's': (0, 1),
+        'a': (-1, 0),
+        'd': (1, 0),
+    }
+
+    if key in mapping:
+        new_direction = mapping[key]
+        if len(snake) == 1 or (new_direction[0] != -direction[0] or new_direction[1] != -direction[1]):
+            direction = new_direction
+            start_game()
+
+
+def setup():
+    global key_proxy
+    reset()
+    key_proxy = create_proxy(on_keydown)
+    document.addEventListener('keydown', key_proxy)
+
+
+setup()
+""".strip(),
+        },
+        {
+            "title": "愤怒的小鸟：弹弓挑战",
+            "slug": "angry-birds",
+            "description": "控制发射角度和力度，将小鸟精准击中绿色小猪，体验弹道物理。",
+            "instructions": "拖动滑块调整角度与力度，点击发射按钮尝试击倒小猪目标。",
+            "play_markup": """
+<div class=\"game-panel\">
+  <h2>愤怒的小鸟：弹弓挑战</h2>
+  <div class=\"game-control\">
+    <label>角度：<input id=\"bird-angle\" type=\"range\" min=\"10\" max=\"80\" value=\"45\" /></label>
+    <label>力度：<input id=\"bird-power\" type=\"range\" min=\"10\" max=\"100\" value=\"55\" /></label>
+    <button id=\"bird-launch\" class=\"primary\">发射！</button>
+  </div>
+  <canvas id=\"bird-canvas\" width=\"360\" height=\"200\"></canvas>
+  <p id=\"bird-status\">调整角度和力度，点击发射尝试命中目标。</p>
+</div>
+""".strip(),
+            "python_code": """
+import math
+import random
+from js import document
+from pyodide.ffi import create_proxy
+
+canvas = document.getElementById('bird-canvas')
+ctx = canvas.getContext('2d')
+
+angle_input = document.getElementById('bird-angle')
+power_input = document.getElementById('bird-power')
+launch_button = document.getElementById('bird-launch')
+status_el = document.getElementById('bird-status')
+
+gravity = 9.8
+pig_x = random.randint(220, 320)
+pig_y = random.randint(80, 140)
+bird_path = []
+launch_proxy = None
+
+
+def draw_scene():
+    ctx.fillStyle = '#87ceeb'
+    ctx.fillRect(0, 0, canvas.width, canvas.height)
+
+    ctx.fillStyle = '#6ab04c'
+    ctx.fillRect(0, canvas.height - 30, canvas.width, 30)
+
+    ctx.fillStyle = '#f9ca24'
+    ctx.beginPath()
+    ctx.arc(40, 40, 20, 0, 2 * math.pi)
+    ctx.fill()
+
+    ctx.fillStyle = '#badc58'
+    ctx.beginPath()
+    ctx.arc(pig_x, pig_y, 12, 0, 2 * math.pi)
+    ctx.fill()
+
+    ctx.fillStyle = '#eb4d4b'
+    for x, y in bird_path:
+        ctx.fillRect(x - 3, canvas.height - y - 3, 6, 6)
+
+
+def launch(event):
+    global bird_path, pig_x, pig_y
+    angle_deg = float(angle_input.value)
+    power = float(power_input.value)
+
+    angle_rad = math.radians(angle_deg)
+    velocity = power / 2
+    bird_path = []
+
+    time = 0.0
+    hit = False
+    while time < 5:
+        x = 20 + velocity * math.cos(angle_rad) * time * 10
+        y = velocity * math.sin(angle_rad) * time * 10 - 0.5 * gravity * (time ** 2) * 10
+        if y < 0:
+            break
+        bird_path.append((x, y))
+        dx = x - pig_x
+        dy = y - pig_y
+        if abs(dx) < 12 and abs(dy) < 12:
+            hit = True
+            break
+        time += 0.08
+
+    if hit:
+        status_el.innerText = '好准！你成功命中了小猪，换个角度再来一次吧。'
+        pig_x = random.randint(220, 320)
+        pig_y = random.randint(80, 140)
+    else:
+        status_el.innerText = '差一点点，再调整角度或力度试试！'
+
+    draw_scene()
+
+
+def setup():
+    global launch_proxy
+    draw_scene()
+    launch_proxy = create_proxy(launch)
+    launch_button.addEventListener('click', launch_proxy)
+
+
+setup()
+""".strip(),
+        },
+        {
+            "title": "俄罗斯方块：堆叠大师",
+            "slug": "tetris-classic",
+            "description": "控制下落的方块堆叠成完整行，消除行获得分数，越玩越上瘾。",
+            "instructions": "方向键左右移动，向下加速，下落中按空格旋转方块。",
+            "play_markup": """
+<div class=\"game-panel\">
+  <h2>俄罗斯方块：堆叠大师</h2>
+  <canvas id=\"tetris-canvas\" width=\"200\" height=\"400\"></canvas>
+  <p id=\"tetris-status\">消除的行数越多，分数越高，试着挑战自己的极限吧！</p>
+</div>
+""".strip(),
+            "python_code": """
+import random
+from js import document, window
+from pyodide.ffi import create_proxy
+
+canvas = document.getElementById('tetris-canvas')
+ctx = canvas.getContext('2d')
+status_el = document.getElementById('tetris-status')
+
+rows, cols = 20, 10
+cell_size = canvas.width // cols
+board = [[0 for _ in range(cols)] for _ in range(rows)]
+
+shapes = [
+    [[1, 1, 1, 1]],
+    [[1, 1], [1, 1]],
+    [[0, 1, 0], [1, 1, 1]],
+    [[1, 1, 0], [0, 1, 1]],
+    [[0, 1, 1], [1, 1, 0]],
+    [[1, 0, 0], [1, 1, 1]],
+    [[0, 0, 1], [1, 1, 1]],
+]
+
+colors = ['#00bcd4', '#ffbe0b', '#ff006e', '#8338ec', '#3a86ff', '#fb5607', '#2ec4b6']
+
+current_shape = None
+current_color = '#00bcd4'
+shape_row = 0
+shape_col = 3
+drop_interval = None
+step_proxy = None
+key_proxy = None
+score = 0
+
+
+def new_shape():
+    global current_shape, current_color, shape_row, shape_col
+    index = random.randrange(len(shapes))
+    current_shape = [row[:] for row in shapes[index]]
+    current_color = colors[index]
+    shape_row = 0
+    shape_col = cols // 2 - len(current_shape[0]) // 2
+    return valid_position()
+
+
+def draw_board():
+    ctx.fillStyle = '#0f172a'
+    ctx.fillRect(0, 0, canvas.width, canvas.height)
+
+    for r in range(rows):
+        for c in range(cols):
+            if board[r][c]:
+                ctx.fillStyle = board[r][c]
+                ctx.fillRect(c * cell_size, r * cell_size, cell_size - 1, cell_size - 1)
+
+    if current_shape:
+        for r, row in enumerate(current_shape):
+            for c, value in enumerate(row):
+                if value:
+                    x = (shape_col + c) * cell_size
+                    y = (shape_row + r) * cell_size
+                    ctx.fillStyle = current_color
+                    ctx.fillRect(x, y, cell_size - 1, cell_size - 1)
+
+
+def valid_position(offset_row=0, offset_col=0, shape=None):
+    check_shape = shape or current_shape
+    for r, row in enumerate(check_shape):
+        for c, value in enumerate(row):
+            if not value:
+                continue
+            new_r = shape_row + r + offset_row
+            new_c = shape_col + c + offset_col
+            if new_c < 0 or new_c >= cols or new_r >= rows:
+                return False
+            if new_r >= 0 and board[new_r][new_c]:
+                return False
+    return True
+
+
+def lock_shape():
+    global score
+    for r, row in enumerate(current_shape):
+        for c, value in enumerate(row):
+            if value:
+                if shape_row + r < 0:
+                    continue
+                board[shape_row + r][shape_col + c] = current_color
+
+    cleared = 0
+    for r in range(rows - 1, -1, -1):
+        if all(board[r]):
+            cleared += 1
+            del board[r]
+            board.insert(0, [0 for _ in range(cols)])
+
+    if cleared:
+        score += cleared * 100
+        status_el.innerText = f'不错！当前分数：{score} 分'
+
+
+def rotate_shape():
+    rotated = list(zip(*current_shape[::-1]))
+    rotated = [list(row) for row in rotated]
+    if valid_position(shape=rotated):
+        return rotated
+    return current_shape
+
+
+def step():
+    global shape_row
+    if valid_position(offset_row=1):
+        shape_row += 1
+    else:
+        if shape_row < 1:
+            game_over()
+            return
+        lock_shape()
+        if not new_shape():
+            game_over()
+            return
+    draw_board()
+
+
+def game_over():
+    global current_shape
+    stop()
+    current_shape = None
+    draw_board()
+    status_el.innerText = f'游戏结束！总分 {score} 分，按回车重新开始。'
+
+
+def stop():
+    global drop_interval
+    if drop_interval is not None:
+        window.clearInterval(drop_interval)
+        drop_interval = None
+
+
+def start():
+    global drop_interval, step_proxy
+    if drop_interval is None:
+        if step_proxy is None:
+            step_proxy = create_proxy(step)
+        drop_interval = window.setInterval(step_proxy, 500)
+
+
+def handle_key(event):
+    global shape_col, shape_row, current_shape
+    key = event.key
+    if drop_interval is None and key != 'Enter':
+        return
+    if key == 'ArrowLeft' and valid_position(offset_col=-1):
+        shape_col -= 1
+    elif key == 'ArrowRight' and valid_position(offset_col=1):
+        shape_col += 1
+    elif key == 'ArrowDown' and valid_position(offset_row=1):
+        shape_row += 1
+    elif key == ' ':
+        current_shape = rotate_shape()
+    elif key == 'Enter':
+        reset()
+        return
+    draw_board()
+
+
+def reset():
+    global board, score
+    stop()
+    for r in range(rows):
+        for c in range(cols):
+            board[r][c] = 0
+    score = 0
+    status_el.innerText = '消除的行数越多，分数越高，试着挑战自己的极限吧！'
+    if not new_shape():
+        game_over()
+        return
+    draw_board()
+    start()
+
+
+def setup():
+    global key_proxy
+    key_proxy = create_proxy(handle_key)
+    document.addEventListener('keydown', key_proxy)
+    reset()
+
+
+setup()
+""".strip(),
+        },
+    ]
+
+    created = False
+    for data in default_games:
+        if not Game.query.filter_by(slug=data["slug"]).first():
+            db.session.add(Game(**data))
+            created = True
+
+    if created:
     if not Game.query.first():
         guess_markup = """
 <div class=\"game-panel\">
