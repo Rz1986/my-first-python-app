@@ -88,3 +88,4 @@ jobs:
         run: |
           set -euxo pipefail
           curl -I http://cici2.fun || true
+          #测试
