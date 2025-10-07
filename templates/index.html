@@ -1,0 +1,52 @@
+{% extends 'base.html' %}
+{% block title %}首页 · Cici 的游戏乐园{% endblock %}
+{% block content %}
+<section class="hero">
+  <div>
+    <h1>欢迎来到 Cici 的游戏乐园</h1>
+    <p>这里汇聚了用 Python 构建的创意小游戏，注册后即可畅玩并为喜欢的作品打分。</p>
+    {% if not current_user.is_authenticated %}
+      <a class="primary" href="{{ url_for('register') }}">立即注册</a>
+      <a class="secondary" href="{{ url_for('login') }}">已有账号？点击登录</a>
+    {% else %}
+      <a class="primary" href="{{ url_for('history') }}">查看我的游玩记录</a>
+    {% endif %}
+  </div>
+  <img src="https://cdn.jsdelivr.net/gh/edent/SuperTinyIcons/images/svg/controller.svg" alt="Game controller" />
+</section>
+
+<section class="featured">
+  <h2>精选排行榜 Top 10</h2>
+  <div class="card-grid">
+    {% for game, avg_score, rating_count in featured_games %}
+      <article class="card">
+        <h3>{{ game.title }}</h3>
+        <p class="score">平均评分：{{ '%.2f'|format(avg_score) }} · 评分人数：{{ rating_count }}</p>
+        <p>{{ game.description }}</p>
+        <a href="{{ url_for('game_detail', slug=game.slug) }}" class="primary">查看详情</a>
+      </article>
+    {% else %}
+      <p>还没有游戏被评分，快去玩一局吧！</p>
+    {% endfor %}
+  </div>
+</section>
+
+<section class="game-list">
+  <h2>全部游戏</h2>
+  <div class="card-grid">
+    {% for game, avg_score, rating_count in games %}
+      <article class="card">
+        <div class="card-header">
+          <h3>{{ game.title }}</h3>
+          <span class="badge">评分 {{ '%.2f'|format(avg_score) }}</span>
+        </div>
+        <p>{{ game.description }}</p>
+        <p class="meta">已被评分 {{ rating_count }} 次 · 发布于 {{ game.created_at.strftime('%Y-%m-%d') }}</p>
+        <a href="{{ url_for('game_detail', slug=game.slug) }}" class="secondary">进入游戏介绍</a>
+      </article>
+    {% else %}
+      <p>还没有任何游戏，管理员快去发布第一款作品吧！</p>
+    {% endfor %}
+  </div>
+</section>
+{% endblock %}
