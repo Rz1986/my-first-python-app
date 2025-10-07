@@ -762,6 +762,54 @@ setup()
             created = True
 
     if created:
+    if not Game.query.first():
+        guess_markup = """
+<div class=\"game-panel\">
+  <h2>猜数字小游戏</h2>
+  <p>系统随机生成 1 到 20 的数字，猜猜它是多少吧！</p>
+  <div class=\"game-control\">
+    <input id=\"guess-input\" type=\"number\" min=\"1\" max=\"20\" placeholder=\"输入你的猜测\" />
+    <button id=\"guess-button\" class=\"primary\">提交答案</button>
+  </div>
+  <p id=\"message\">祝你好运！</p>
+</div>
+""".strip()
+        guess_code = """
+import random
+from js import document
+
+if 'secret_number' not in globals():
+    secret_number = random.randint(1, 20)
+
+input_el = document.getElementById('guess-input')
+message_el = document.getElementById('message')
+button_el = document.getElementById('guess-button')
+
+def check_guess(event):
+    try:
+        guess = int(input_el.value)
+    except ValueError:
+        message_el.innerText = '请输入 1-20 的整数！'
+        return
+
+    if guess == secret_number:
+        message_el.innerText = '恭喜你猜对啦！刷新页面重新挑战。'
+    elif guess < secret_number:
+        message_el.innerText = '再大一点！'
+    else:
+        message_el.innerText = '再小一点！'
+
+button_el.addEventListener('click', check_guess)
+""".strip()
+        game = Game(
+            title="猜数字挑战",
+            slug="guess-number",
+            description="经典的猜数字游戏，考验你的直觉和运气。",
+            instructions="输入 1-20 的数字并提交，看看你能否用最少次数猜中！",
+            play_markup=guess_markup,
+            python_code=guess_code,
+        )
+        db.session.add(game)
         db.session.commit()
 
 
