@@ -1,0 +1,54 @@
+name: Deploy to Alibaba Cloud ECS
+
+on:
+  push:
+    branches: [ "main" ]   # 你用 master 就改成 master
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Add host key (avoid interactive prompt)
+        run: |
+          mkdir -p ~/.ssh
+          ssh-keyscan -p "${{ secrets.SSH_PORT || 22 }}" "${{ secrets.SSH_HOST }}" >> ~/.ssh/known_hosts
+
+      # 同步代码到服务器（rsync 最省心）
+      - name: Rsync project to server
+        uses: burnett01/rsync-deployments@6.0
+        with:
+          switches: -az --delete --exclude ".git" --exclude ".github" --exclude "node_modules" --exclude ".venv"
+          path: .
+          remote_path: ${{ secrets.APP_DIR }}
+          remote_host: ${{ secrets.SSH_HOST }}
+          remote_user: ${{ secrets.SSH_USER }}
+          remote_key: ${{ secrets.SSH_KEY }}
+          remote_port: ${{ secrets.SSH_PORT || 22 }}
+
+      # 服务器上安装依赖并重启服务
+      - name: Install deps & restart service via SSH
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          port: ${{ secrets.SSH_PORT || 22 }}
+          script: |
+            set -e
+            cd "${{ secrets.APP_DIR }}"
+            # 若 venv 不存在就创建（第一次）
+            [ -x .venv/bin/python ] || python3 -m venv .venv
+            .venv/bin/pip install -U pip
+            if [ -f requirements.txt ]; then
+              .venv/bin/pip install -r requirements.txt
+            fi
+            # 可选：写入版本接口使用的提交号（如果你做了 /version）
+            echo "APP_VERSION=${GITHUB_SHA}" > .env
+            # 重启后端
+            sudo systemctl restart "${{ secrets.SERVICE_NAME }}"
+            # 健康检查（本机直连后端或经域名）
+            curl -fsI http://127.0.0.1:5000 || (sudo journalctl -u "${{ secrets.SERVICE_NAME }}" -n 60 --no-pager && exit 1)
