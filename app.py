@@ -1,13 +1,11 @@
 import os
-import random
 import re
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Optional
 
 from flask import (
     Flask,
     flash,
-    jsonify,
     redirect,
     render_template,
     request,
@@ -22,7 +20,7 @@ from flask_login import (
     logout_user,
 )
 from flask_sqlalchemy import SQLAlchemy
-from sqlalchemy import func, or_, text, inspect as sa_inspect
+from sqlalchemy import func
 from werkzeug.security import check_password_hash, generate_password_hash
 
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
@@ -63,7 +61,6 @@ class User(UserMixin, db.Model):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(80), unique=True, nullable=False)
     email = db.Column(db.String(120), unique=True, nullable=False)
-    phone_number = db.Column(db.String(20), unique=True)
     password_hash = db.Column(db.String(255), nullable=False)
     is_admin = db.Column(db.Boolean, default=False, nullable=False)
     plays = db.relationship("PlayHistory", backref="user", lazy=True)
@@ -95,13 +92,6 @@ class Game(db.Model):
         return sum(r.score for r in self.ratings) / len(self.ratings)
 
 
-class PhoneVerification(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    phone_number = db.Column(db.String(20), nullable=False, index=True)
-    code = db.Column(db.String(6), nullable=False)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
-
-
 @login_manager.user_loader
 def load_user(user_id: str) -> Optional[User]:
     return db.session.get(User, int(user_id))
@@ -110,18 +100,6 @@ def load_user(user_id: str) -> Optional[User]:
 def slugify(title: str) -> str:
     slug = re.sub(r"[^a-zA-Z0-9\u4e00-\u9fff]+", "-", title).strip("-")
     return slug.lower() or "game"
-
-
-def normalize_phone(phone: str) -> str:
-    return re.sub(r"\D", "", phone or "")
-
-
-def ensure_user_phone_column() -> None:
-    inspector = sa_inspect(db.engine)
-    column_names = {column["name"] for column in inspector.get_columns("user")}
-    if "phone_number" not in column_names:
-        with db.engine.begin() as connection:
-            connection.execute(text("ALTER TABLE user ADD COLUMN phone_number VARCHAR(20)"))
 
 
 @app.route("/")
@@ -158,40 +136,21 @@ def register():
     if request.method == "POST":
         username = request.form.get("username", "").strip()
         email = request.form.get("email", "").strip()
-        phone = normalize_phone(request.form.get("phone", ""))
-        verification_code = request.form.get("verification_code", "").strip()
         password = request.form.get("password", "")
         confirm_password = request.form.get("confirm_password", "")
 
-        if not username or not email or not phone or not password:
+        if not username or not email or not password:
             flash("请完整填写注册信息。", "danger")
-        elif not re.fullmatch(r"1\d{10}", phone):
-            flash("请输入有效的 11 位中国大陆手机号。", "danger")
         elif password != confirm_password:
             flash("两次输入的密码不一致。", "danger")
+        elif User.query.filter((User.username == username) | (User.email == email)).first():
+            flash("用户名或邮箱已被使用。", "danger")
         else:
-            existing_user = User.query.filter(
-                (User.username == username) | (User.email == email) | (User.phone_number == phone)
-            ).first()
-            if existing_user:
-                flash("用户名、邮箱或手机号已被使用。", "danger")
-                return render_template("register.html")
-
-            verification = (
-                PhoneVerification.query.filter_by(phone_number=phone, code=verification_code)
-                .order_by(PhoneVerification.created_at.desc())
-                .first()
-            )
-            if not verification or verification.created_at < datetime.utcnow() - timedelta(minutes=10):
-                flash("验证码无效或已过期，请重新获取。", "danger")
-                return render_template("register.html")
-
-            user = User(username=username, email=email, phone_number=phone)
+            user = User(username=username, email=email)
             user.set_password(password)
             if User.query.count() == 0:
                 user.is_admin = True
             db.session.add(user)
-            db.session.delete(verification)
             db.session.commit()
             flash("注册成功，请登录开始游戏之旅！", "success")
             return redirect(url_for("login"))
@@ -205,9 +164,9 @@ def login():
         return redirect(url_for("index"))
 
     if request.method == "POST":
-        account = request.form.get("username", "").strip()
+        username = request.form.get("username", "").strip()
         password = request.form.get("password", "")
-        user = User.query.filter(or_(User.username == account, User.phone_number == account)).first()
+        user = User.query.filter_by(username=username).first()
         if user and user.check_password(password):
             login_user(user)
             flash("欢迎回来，游戏玩家！", "success")
@@ -337,54 +296,17 @@ def record_play(game: Game) -> None:
     db.session.commit()
 
 
-@app.route("/register/send_code", methods=["POST"])
-def send_phone_code():
-    data = request.get_json(silent=True) or {}
-    phone_raw = data.get("phone", "")
-    phone = normalize_phone(phone_raw)
-
-    if not phone:
-        return jsonify({"ok": False, "message": "请输入手机号后再获取验证码。"}), 400
-
-    if not re.fullmatch(r"1\d{10}", phone):
-        return jsonify({"ok": False, "message": "手机号格式不正确，请输入 11 位号码。"}), 400
-
-    code = f"{random.randint(0, 999999):06d}"
-    verification = PhoneVerification(phone_number=phone, code=code)
-    db.session.add(verification)
-    db.session.commit()
-
-    return jsonify(
-        {
-            "ok": True,
-            "message": "验证码已发送（演示环境请直接使用下方验证码）。",
-            "code": code,
-        }
-    )
-
-
 @app.context_processor
 def inject_now():
     return {"current_year": datetime.utcnow().year}
 
 
 def seed_data() -> None:
-    ensure_user_phone_column()
     if not User.query.filter_by(username="admin").first():
-        admin = User(
-            username="admin",
-            email="admin@example.com",
-            phone_number="13800000000",
-            is_admin=True,
-        )
+        admin = User(username="admin", email="admin@example.com", is_admin=True)
         admin.set_password("admin123")
         db.session.add(admin)
         db.session.commit()
-    else:
-        admin = User.query.filter_by(username="admin").first()
-        if admin and not admin.phone_number:
-            admin.phone_number = "13800000000"
-            db.session.commit()
 
     default_games = [
         {
@@ -840,6 +762,54 @@ setup()
             created = True
 
     if created:
+    if not Game.query.first():
+        guess_markup = """
+<div class=\"game-panel\">
+  <h2>猜数字小游戏</h2>
+  <p>系统随机生成 1 到 20 的数字，猜猜它是多少吧！</p>
+  <div class=\"game-control\">
+    <input id=\"guess-input\" type=\"number\" min=\"1\" max=\"20\" placeholder=\"输入你的猜测\" />
+    <button id=\"guess-button\" class=\"primary\">提交答案</button>
+  </div>
+  <p id=\"message\">祝你好运！</p>
+</div>
+""".strip()
+        guess_code = """
+import random
+from js import document
+
+if 'secret_number' not in globals():
+    secret_number = random.randint(1, 20)
+
+input_el = document.getElementById('guess-input')
+message_el = document.getElementById('message')
+button_el = document.getElementById('guess-button')
+
+def check_guess(event):
+    try:
+        guess = int(input_el.value)
+    except ValueError:
+        message_el.innerText = '请输入 1-20 的整数！'
+        return
+
+    if guess == secret_number:
+        message_el.innerText = '恭喜你猜对啦！刷新页面重新挑战。'
+    elif guess < secret_number:
+        message_el.innerText = '再大一点！'
+    else:
+        message_el.innerText = '再小一点！'
+
+button_el.addEventListener('click', check_guess)
+""".strip()
+        game = Game(
+            title="猜数字挑战",
+            slug="guess-number",
+            description="经典的猜数字游戏，考验你的直觉和运气。",
+            instructions="输入 1-20 的数字并提交，看看你能否用最少次数猜中！",
+            play_markup=guess_markup,
+            python_code=guess_code,
+        )
+        db.session.add(game)
         db.session.commit()
 
 

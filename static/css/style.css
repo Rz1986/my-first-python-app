@@ -206,21 +206,6 @@ nav .secondary {
   justify-self: flex-start;
 }
 
-.form-row {
-  display: flex;
-  gap: 0.75rem;
-  align-items: flex-end;
-}
-
-.form-row .stretch {
-  flex: 1;
-}
-
-.form-row button {
-  white-space: nowrap;
-  align-self: flex-end;
-}
-
 .helper-text {
   color: var(--muted);
 }
