@@ -1,0 +1,29 @@
+{% extends 'base.html' %}
+{% block title %}发布新游戏 · Cici 的游戏乐园{% endblock %}
+{% block content %}
+<section class="admin-form">
+  <h1>发布新的 Python 小游戏</h1>
+  <p>通过下方表单填写游戏信息，并粘贴 PyScript 代码与自定义界面 HTML。发布后玩家即可在浏览器中体验。</p>
+  <form method="post" class="form-grid">
+    <label>游戏名称
+      <input type="text" name="title" required>
+    </label>
+    <label>自定义链接（可选）
+      <input type="text" name="slug" placeholder="留空则自动生成">
+    </label>
+    <label>游戏简介
+      <textarea name="description" rows="3" required></textarea>
+    </label>
+    <label>玩法说明
+      <textarea name="instructions" rows="4" required></textarea>
+    </label>
+    <label>游戏界面 HTML
+      <textarea name="play_markup" rows="6" required placeholder="例如：&lt;div&gt;...&lt;/div&gt;"></textarea>
+    </label>
+    <label>PyScript 代码
+      <textarea name="python_code" rows="10" required placeholder="在这里粘贴 Python 游戏逻辑"></textarea>
+    </label>
+    <button type="submit" class="primary">发布游戏</button>
+  </form>
+</section>
+{% endblock %}
