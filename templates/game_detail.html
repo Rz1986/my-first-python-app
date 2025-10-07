@@ -1,0 +1,40 @@
+{% extends 'base.html' %}
+{% block title %}{{ game.title }} · Cici 的游戏乐园{% endblock %}
+{% block content %}
+<article class="game-detail">
+  <header>
+    <h1>{{ game.title }}</h1>
+    <p class="meta">平均评分：{{ avg_rating }} / 5 · 发布于 {{ game.created_at.strftime('%Y-%m-%d') }}</p>
+  </header>
+  <section>
+    <h2>游戏简介</h2>
+    <p>{{ game.description }}</p>
+  </section>
+  <section>
+    <h2>玩法说明</h2>
+    <p>{{ game.instructions }}</p>
+  </section>
+  <section class="cta">
+    {% if current_user.is_authenticated %}
+      <a href="{{ url_for('play_game', slug=game.slug) }}" class="primary">开始游戏</a>
+    {% else %}
+      <p>登录后即可体验该游戏。</p>
+      <a href="{{ url_for('login') }}" class="primary">登录</a>
+    {% endif %}
+  </section>
+
+  <section class="rating">
+    <h2>为这款游戏打分</h2>
+    {% if current_user.is_authenticated %}
+      <form method="post" action="{{ url_for('rate_game', slug=game.slug) }}">
+        <label>我的评分（1-5 分）
+          <input type="number" name="score" min="1" max="5" value="{{ user_rating.score if user_rating else '' }}" required>
+        </label>
+        <button type="submit" class="secondary">提交评分</button>
+      </form>
+    {% else %}
+      <p>请先 <a href="{{ url_for('login') }}">登录</a> 后再进行评分。</p>
+    {% endif %}
+  </section>
+</article>
+{% endblock %}

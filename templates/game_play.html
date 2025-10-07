@@ -1,0 +1,21 @@
+{% extends 'base.html' %}
+{% block title %}畅玩 {{ game.title }} · Cici 的游戏乐园{% endblock %}
+{% block head_extra %}
+  <link rel="stylesheet" href="https://pyscript.net/releases/2024.5.1/core.css">
+  <script type="module" src="https://pyscript.net/releases/2024.5.1/core.js"></script>
+{% endblock %}
+{% block content %}
+<article class="game-play">
+  <header>
+    <h1>{{ game.title }}</h1>
+    <p class="meta">祝你好运，玩得开心！</p>
+    <a href="{{ url_for('game_detail', slug=game.slug) }}" class="secondary">返回游戏介绍</a>
+  </header>
+  <section class="play-area">
+    {{ game.play_markup | safe }}
+  </section>
+  <py-script>
+{{ game.python_code }}
+  </py-script>
+</article>
+{% endblock %}
