@@ -2,7 +2,7 @@ name: Deploy to Alibaba Cloud ECS
 
 on:
   push:
-    branches: [ "main" ]   # 你用 master 就改成 master
+    branches: [ "main" ]  # 如用 master 改这里
 
 jobs:
   deploy:
@@ -12,43 +12,56 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Add host key (avoid interactive prompt)
+      - name: Prepare SSH key & known_hosts
+        shell: bash
         run: |
+          set -euxo pipefail
           mkdir -p ~/.ssh
-          ssh-keyscan -p "${{ secrets.SSH_PORT || 22 }}" "${{ secrets.SSH_HOST }}" >> ~/.ssh/known_hosts
+          # 写入私钥（来自 Secrets）
+          echo "${{ secrets.SSH_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          # 加入服务器主机指纹，避免首连交互
+          ssh-keyscan -p "${{ secrets.SSH_PORT }}" "${{ secrets.SSH_HOST }}" >> ~/.ssh/known_hosts
+          # 测试 SSH 连通性（-o StrictHostKeyChecking=yes 确保指纹生效）
+          ssh -p "${{ secrets.SSH_PORT }}" -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=yes -o BatchMode=yes \
+            "${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}" 'echo "SSH OK: $(hostname)"; whoami; uname -a'
 
-      # 同步代码到服务器（rsync 最省心）
-      - name: Rsync project to server
-        uses: Burnett01/rsync-deployments@7.0.2
-        with:
-          switches: -az --delete --exclude ".git" --exclude ".github" --exclude "node_modules" --exclude ".venv"
-          path: .
-          remote_path: ${{ secrets.APP_DIR }}
-          remote_host: ${{ secrets.SSH_HOST }}
-          remote_user: ${{ secrets.SSH_USER }}
-          remote_key: ${{ secrets.SSH_KEY }}
-          remote_port: ${{ secrets.SSH_PORT || 22 }}
+      - name: Ensure app dir exists on server
+        shell: bash
+        run: |
+          set -euxo pipefail
+          ssh -p "${{ secrets.SSH_PORT }}" -i ~/.ssh/id_ed25519 "${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}" \
+            "sudo mkdir -p '${{ secrets.APP_DIR }}' && sudo chown -R '${{ secrets.SSH_USER }}':'${{ secrets.SSH_USER }}' '${{ secrets.APP_DIR }}'"
 
-      # 服务器上安装依赖并重启服务
-      - name: Install deps & restart service via SSH
-        uses: appleboy/ssh-action@v1.2.0
-        with:
-          host: ${{ secrets.SSH_HOST }}
-          username: ${{ secrets.SSH_USER }}
-          key: ${{ secrets.SSH_KEY }}
-          port: ${{ secrets.SSH_PORT || 22 }}
-          script: |
-            set -e
+      - name: Rsync project to server (verbose)
+        shell: bash
+        run: |
+          set -euxo pipefail
+          rsync -azv --delete \
+            --exclude ".git" --exclude ".github" --exclude ".venv" \
+            -e "ssh -p ${{ secrets.SSH_PORT }} -i ~/.ssh/id_ed25519" \
+            ./ "${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:${{ secrets.APP_DIR }}/"
+
+      - name: Install deps & restart service (with logs)
+        shell: bash
+        run: |
+          set -euxo pipefail
+          ssh -p "${{ secrets.SSH_PORT }}" -i ~/.ssh/id_ed25519 "${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}" bash -lc '
+            set -euxo pipefail
             cd "${{ secrets.APP_DIR }}"
-            # 若 venv 不存在就创建（第一次）
+            # 准备 venv
             [ -x .venv/bin/python ] || python3 -m venv .venv
             .venv/bin/pip install -U pip
             if [ -f requirements.txt ]; then
               .venv/bin/pip install -r requirements.txt
+            else
+              .venv/bin/pip install flask gunicorn
             fi
-            # 可选：写入版本接口使用的提交号（如果你做了 /version）
+            # 写入版本号（如你实现了 /version 可用）
             echo "APP_VERSION=${GITHUB_SHA}" > .env
-            # 重启后端
+            # 重启服务并查看状态
             sudo systemctl restart "${{ secrets.SERVICE_NAME }}"
-            # 健康检查（本机直连后端或经域名）
-            curl -fsI http://127.0.0.1:5000 || (sudo journalctl -u "${{ secrets.SERVICE_NAME }}" -n 60 --no-pager && exit 1)
+            sudo systemctl status "${{ secrets.SERVICE_NAME }}" -n 20 --no-pager
+            # 后端健康检查（直连 gunicorn 端口）
+            curl -fsI http://127.0.0.1:5000 || (echo "Backend health check failed"; exit 1)
+          '
